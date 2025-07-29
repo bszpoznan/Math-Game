@@ -14,7 +14,8 @@ namespace Math_Game
             Console.WriteLine("5. Random Game");
             Console.WriteLine("6. View Game History");
             Console.WriteLine("7. Change Difficulty Level");
-            Console.WriteLine("8. Exit");
+            Console.WriteLine("8. Toogle Voice Response");
+            Console.WriteLine("9. Exit");
         }
 
 

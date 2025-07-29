@@ -19,6 +19,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Linq.Expressions;
 using Math_Game;
+using Microsoft.CognitiveServices.Speech;
 
 MathGameLogic mathGame = new MathGameLogic();
 Random random = new Random();
@@ -28,6 +29,7 @@ int secondNumber;
 int userMenuSelection;
 int score = 0;
 bool gameOver = false;
+bool voiceResponse = false;
 
 DifficultyLevel difficultyLevel = DifficultyLevel.Easy;
 
@@ -39,13 +41,13 @@ while (!gameOver)
     switch (userMenuSelection)
     {
         case 1: // Addition
-            score = await PerformOperation(mathGame, firstNumber, secondNumber, '+', score, difficultyLevel);
+            score = await PerformOperation(mathGame, firstNumber, secondNumber, '+', score, difficultyLevel, voiceResponse);
             break;
         case 2: // Subtraction
-            score = await PerformOperation(mathGame, firstNumber, secondNumber, '-', score, difficultyLevel);
+            score = await PerformOperation(mathGame, firstNumber, secondNumber, '-', score, difficultyLevel, voiceResponse);
             break;
         case 3: // Multiplication
-            score = await PerformOperation(mathGame, firstNumber, secondNumber, '*', score, difficultyLevel);
+            score = await PerformOperation(mathGame, firstNumber, secondNumber, '*', score, difficultyLevel, voiceResponse);
             break;
         case 4: // Division
             while( firstNumber % secondNumber != 0 )
@@ -53,7 +55,7 @@ while (!gameOver)
                 firstNumber = random.Next(0, 101);
                 secondNumber = random.Next(1, 101); // Ensure second number is not zero
             }   
-            score = await PerformOperation(mathGame, firstNumber, secondNumber, '/', score, difficultyLevel);
+            score = await PerformOperation(mathGame, firstNumber, secondNumber, '/', score, difficultyLevel, voiceResponse);
             break;
         case 5: // Random Game
             char[] operations = new char[] { '+', '-', '*', '/' };
@@ -91,20 +93,20 @@ while (!gameOver)
             difficultyLevel = ChangeDifficulty();
             Console.WriteLine($"Difficulty level changed to {difficultyLevel}.");
             break;
-        case 8: // Exit
+        case 8: // Toggle Voice Response
+            voiceResponse = !voiceResponse;
+            Console.WriteLine($"Voice response is now {(voiceResponse ? "enabled" : "disabled")}.");
+            break;
+        case 9: // Exit
             gameOver = true;
             Console.WriteLine("Thank you for playing!");
+            Console.WriteLine($"Your final score is: {score}");
             break;
         default:
             Console.WriteLine("Invalid selection. Please try again.");
             break;
     }
 }
-
-
-
-
-
 
 
 static DifficultyLevel ChangeDifficulty()
@@ -140,24 +142,58 @@ static int GetUserMenuSelection(MathGameLogic mathGame)
 {
     int selection = -1;
     mathGame.ShowMenu();
-    while (!int.TryParse(Console.ReadLine(), out selection) || selection < 1 || selection > 8)
+    while (!int.TryParse(Console.ReadLine(), out selection) || selection < 1 || selection > 9)
     {
-        Console.WriteLine("Invalid selection. Please enter a number between 1 and 8.");
+        Console.WriteLine("Invalid selection. Please enter a number between 1 and 9.");
     }
     return selection;
 }
 
-static async Task<int?> GetUserResponse(DifficultyLevel difficultyLevel)
+static async Task<string?> GetVoiceInputAsync()
+{
+    var speechKey = Environment.GetEnvironmentVariable("AZURE_SPEECH_KEY");
+    var speechRegion = Environment.GetEnvironmentVariable("AZURE_SPEECH_REGION");
+    var config = SpeechConfig.FromSubscription(speechKey, speechRegion);
+
+    using var recognizer = new SpeechRecognizer(config);
+
+    var result = await recognizer.RecognizeOnceAsync();
+
+    if (result.Reason == ResultReason.RecognizedSpeech)
+    {
+        Console.WriteLine($"Recognized: {result.Text}");
+        return System.Text.RegularExpressions.Regex.Replace(result.Text, @"[^0-9\-]", "");
+    }
+    else
+    {
+        Console.WriteLine("No speech recognized or an error occurred.");
+        return null;
+    }
+}
+
+static async Task<int?> GetUserResponse(DifficultyLevel difficultyLevel, bool voiceResponse = false)
 {
     int response = 0;
-    int timeout = (int)difficultyLevel; ;
+    int timeout = (int)difficultyLevel;
 
     Stopwatch stopwatch = new Stopwatch();
     stopwatch.Start();
-    Task<string?> getUserInputTask = Task.Run(() => Console.ReadLine());
+
+    string? result = null;
+    Task<string?> getUserInputTask;
+
+    if (voiceResponse)
+    {
+        getUserInputTask = Task.Run(() => GetVoiceInputAsync());
+    }
+    else
+    {
+        getUserInputTask = Task.Run(() => Console.ReadLine());
+    }
+
     try
     {
-        string? result = await Task.WhenAny(getUserInputTask, Task.Delay(timeout * 1000)) == getUserInputTask ? getUserInputTask.Result : null;
+        result = await Task.WhenAny(getUserInputTask, Task.Delay(timeout * 1000)) == getUserInputTask ? getUserInputTask.Result : null;
         stopwatch.Stop();
         if (result != null && int.TryParse(result, out response))
         {
@@ -191,17 +227,21 @@ static int ValidateUserResult(int result, int? userResponse, int score)
     return score;
 }
 
-static async Task<int> PerformOperation(MathGameLogic mathGame, int num1, int num2, char operation, int score, DifficultyLevel difficulty)
+static async Task<int> PerformOperation(MathGameLogic mathGame, int num1, int num2, char operation, int score, DifficultyLevel difficulty, bool voiceResponse = false)
 {
     int result;
     int? userResponse;
     DisplayMathGameQuestion(num1, num2, operation);
-    result = mathGame.MathOperation(num1, num2, operation); 
-    userResponse = await GetUserResponse(difficulty);
+    result = mathGame.MathOperation(num1, num2, operation);
+    userResponse = await GetUserResponse(difficulty, voiceResponse);
     score += ValidateUserResult(result, userResponse, score);
     return score;
 
 } 
+
+
+
+
 public enum DifficultyLevel
 {
     Easy = 45,
